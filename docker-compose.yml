@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  flask-api:
+    build: ./flask-api
+    ports:
+      - "5000:5000"
+  streamlit-ui:
+    build: ./streamlit-ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - flask-api
