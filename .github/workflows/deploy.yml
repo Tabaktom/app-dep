@@ -10,73 +10,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      - name: DEBUG: Print ECR variables
+        run: |
+          echo "AWS_ACCOUNT_ID='${{ secrets.AWS_ACCOUNT_ID }}'"
+          echo "AWS_REGION='${{ secrets.AWS_REGION }}'"
+          echo "ECR_REPO_FLASK_API='${{ secrets.ECR_REPO_FLASK_API }}'"
+          echo "ECR_REPO_STREAMLIT_UI='${{ secrets.ECR_REPO_STREAMLIT_UI }}'"
 
-    - name: DEBUG | verify secrets
-      run: |
-        echo "AWS_ACCOUNT_ID='${{ secrets.AWS_ACCOUNT_ID }}'"
-        echo "AWS_REGION='${{ secrets.AWS_REGION }}'"
-        echo "ECR_REPO_FLASK_API='${{ secrets.ECR_REPO_FLASK_API }}'"
-        echo "ECR_REPO_STREAMLIT_UI='${{ secrets.ECR_REPO_STREAMLIT_UI }}'"
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+            | docker login --username AWS \
+              --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
 
-    - name: Build & push Flask API image
-      id: build-flask
-      run: |
-        docker build -t flask-api ./flask-api
-        docker tag flask-api:latest \
-          ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest
-        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest
-        echo "flask_image=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest" >> $GITHUB_OUTPUT
+      - name: Build Flask API image
+        run: docker build -t text-api ./flask-api
 
-    - name: Build & push Streamlit UI image
-      id: build-streamlit
-      run: |
-        docker build -t streamlit-ui ./streamlit-ui
-        docker tag streamlit-ui:latest \
-          ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest
-        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest
-        echo "streamlit_image=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest" >> $GITHUB_OUTPUT
+      - name: Tag Flask API image
+        run: |
+          docker tag text-api:latest \
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest
 
-    - name: Render updated task-definition
-      id: task-def
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: task-definition.json
-        container-name: flask-api-container
-        image: ${{ steps.build-flask.outputs.flask_image }}
-
-    - name: Deploy Flask API to ECS
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      with:
-        task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: ${{ secrets.ECS_SERVICE_FLASK }}
-        cluster: ${{ secrets.ECS_CLUSTER }}
-        wait-for-service-stability: true
-
-    - name: Render updated Streamlit task-definition
-      id: task-def2
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: task-definition.json
-        container-name: streamlit-ui-container
-        image: ${{ steps.build-streamlit.outputs.streamlit_image }}
-
-    - name: Deploy Streamlit UI to ECS
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      with:
-        task-definition: ${{ steps.task-def2.outputs.task-definition }}
-        service: ${{ secrets.ECS_SERVICE_STREAMLIT }}
-        cluster: ${{ secrets.ECS_CLUSTER }}
-        wait-for-service-stability: true
+      # ... the rest of your pipeline steps
