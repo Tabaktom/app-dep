@@ -19,12 +19,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: DEBUG: Print ECR variables
+      - name: DEBUG Print ECR variables
         run: |
-          echo "AWS_ACCOUNT_ID='${{ secrets.AWS_ACCOUNT_ID }}'"
+          echo "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}'"
+          
+          echo "AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}'"
+          echo "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}'"
           echo "AWS_REGION='${{ secrets.AWS_REGION }}'"
           echo "ECR_REPO_FLASK_API='${{ secrets.ECR_REPO_FLASK_API }}'"
           echo "ECR_REPO_STREAMLIT_UI='${{ secrets.ECR_REPO_STREAMLIT_UI }}'"
+          echo "ECS_CLUSTER='${{ secrets.ECS_CLUSTER }}'"
+          echo "ECS_SERVICE_FLASK='${{ secrets.ECS_SERVICE_FLASK }}'"
+          echo "ECS_SERVICE_STREAMLIT='${{ secrets.ECS_SERVICE_STREAMLIT }}'"
+          echo "AWS_ACCOUNT_ID='${{ secrets.AWS_ACCOUNT_ID }}'"
 
       - name: Login to ECR
         run: |
