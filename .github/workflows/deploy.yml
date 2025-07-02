@@ -10,57 +10,73 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: DEBUG Print ECR variables
-        run: |
-          echo "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}'"
-          echo "AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}'"
-          echo "AWS_REGION='${{ secrets.AWS_REGION }}'"
-          echo "ECR_REPO_FLASK_API='${{ secrets.ECR_REPO_FLASK_API }}'"
-          echo "ECR_REPO_STREAMLIT_UI='${{ secrets.ECR_REPO_STREAMLIT_UI }}'"
-          echo "ECS_CLUSTER='${{ secrets.ECS_CLUSTER }}'"
-          echo "ECS_SERVICE_FLASK='${{ secrets.ECS_SERVICE_FLASK }}'"
-          echo "ECS_SERVICE_STREAMLIT='${{ secrets.ECS_SERVICE_STREAMLIT }}'"
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
-            | docker login --username AWS \
-              --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+    - name: DEBUG | verify secrets
+      run: |
+        echo "AWS_ACCOUNT_ID='${{ secrets.AWS_ACCOUNT_ID }}'"
+        echo "AWS_REGION='${{ secrets.AWS_REGION }}'"
+        echo "ECR_REPO_FLASK_API='${{ secrets.ECR_REPO_FLASK_API }}'"
+        echo "ECR_REPO_STREAMLIT_UI='${{ secrets.ECR_REPO_STREAMLIT_UI }}'"
 
-      - name: Build and push Flask API image
-        run: |
-          docker build -t ${{ secrets.ECR_REPO_FLASK_API }} ./flask-api
-          docker tag ${{ secrets.ECR_REPO_FLASK_API }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest
+    - name: Build & push Flask API image
+      id: build-flask
+      run: |
+        docker build -t flask-api ./flask-api
+        docker tag flask-api:latest \
+          ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest
+        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest
+        echo "flask_image=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_FLASK_API }}:latest" >> $GITHUB_OUTPUT
 
-      - name: Build and push Streamlit UI image
-        run: |
-          docker build -t ${{ secrets.ECR_REPO_STREAMLIT_UI }} ./streamlit-ui
-          docker tag ${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest
+    - name: Build & push Streamlit UI image
+      id: build-streamlit
+      run: |
+        docker build -t streamlit-ui ./streamlit-ui
+        docker tag streamlit-ui:latest \
+          ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest
+        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest
+        echo "streamlit_image=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPO_STREAMLIT_UI }}:latest" >> $GITHUB_OUTPUT
 
-      - name: Update Flask ECS service
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ecs/flask-api-task-def.json
-          service: ${{ secrets.ECS_SERVICE_FLASK }}
-          cluster: ${{ secrets.ECS_CLUSTER }}
-          wait-for-service-stability: true
+    - name: Render updated task-definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: flask-api-container
+        image: ${{ steps.build-flask.outputs.flask_image }}
 
-      - name: Update Streamlit ECS service
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ecs/streamlit-ui-task-def.json
-          service: ${{ secrets.ECS_SERVICE_STREAMLIT_UI }}
-          cluster: ${{ secrets.ECS_CLUSTER }}
-          wait-for-service-stability: true
+    - name: Deploy Flask API to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ secrets.ECS_SERVICE_FLASK }}
+        cluster: ${{ secrets.ECS_CLUSTER }}
+        wait-for-service-stability: true
 
+    - name: Render updated Streamlit task-definition
+      id: task-def2
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: streamlit-ui-container
+        image: ${{ steps.build-streamlit.outputs.streamlit_image }}
+
+    - name: Deploy Streamlit UI to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def2.outputs.task-definition }}
+        service: ${{ secrets.ECS_SERVICE_STREAMLIT }}
+        cluster: ${{ secrets.ECS_CLUSTER }}
+        wait-for-service-stability: true
